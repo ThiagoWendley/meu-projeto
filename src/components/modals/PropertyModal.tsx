@@ -1,385 +1,357 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { useState } from 'react';
+import { X, Plus, Search } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Property } from '@/types/property';
 
-interface PropertyModalProps {
+export interface PropertyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  property?: Property | null;
-  onSubmit: (data: Property) => void;
+  onSubmit: (data: PropertyFormData) => void;
+  initialData?: PropertyFormData; // Dados iniciais para edição
+  isEditing?: boolean; // Indicar se está editando ou criando
 }
 
-export default function PropertyModal({
-  isOpen,
-  onClose,
-  property,
-  onSubmit,
+export interface PropertyFormData {
+  id?: string;
+  code: string;
+  type: string;
+  address: string;
+  number: string;
+  complement?: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  cep: string;
+  description?: string;
+  area?: string;
+}
+
+export default function PropertyModal({ 
+  isOpen, 
+  onClose, 
+  onSubmit, 
+  initialData, 
+  isEditing = false 
 }: PropertyModalProps) {
-  const [formData, setFormData] = useState<Omit<Property, 'id'>>({
-    codigo: '',
-    tipo: 'Residencial',
-    endereco: {
+  const [formData, setFormData] = useState<PropertyFormData>(
+    initialData || {
+      code: '',
+      type: '',
+      address: '',
+      number: '',
+      complement: '',
+      neighborhood: '',
+      city: '',
+      state: '',
       cep: '',
-      logradouro: '',
-      numero: '',
-      complemento: '',
-      bairro: '',
-      cidade: '',
-      estado: '',
-    },
-    area: 0,
-    quartos: 0,
-    banheiros: 0,
-    vagas: 0,
-    imobiliaria: {
-      id: '',
-      nome: '',
-    },
-    status: 'Disponível',
-    valor: 0,
-    dataRegistro: new Date().toISOString().split('T')[0],
-  });
-
-  useEffect(() => {
-    if (property) {
-      setFormData({
-        ...property,
-        endereco: {
-          ...property.endereco,
-          complemento: property.endereco.complemento || '',
-        },
-      });
-    } else {
-      setFormData({
-        codigo: '',
-        tipo: 'Residencial',
-        endereco: {
-          cep: '',
-          logradouro: '',
-          numero: '',
-          complemento: '',
-          bairro: '',
-          cidade: '',
-          estado: '',
-        },
-        area: 0,
-        quartos: 0,
-        banheiros: 0,
-        vagas: 0,
-        imobiliaria: {
-          id: '',
-          nome: '',
-        },
-        status: 'Disponível',
-        valor: 0,
-        dataRegistro: new Date().toISOString().split('T')[0],
-      });
+      description: '',
+      area: ''
     }
-  }, [property]);
+  );
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      ...formData,
-      id: property?.id || String(Date.now()),
-    });
+  const handleSubmit = () => {
+    if (isEditing) {
+      // Se estiver editando, mantém o código do imóvel
+      onSubmit(formData);
+    } else {
+      // Se estiver criando um novo, gera um código sequencial
+      // Gerar um número sequencial para o código do imóvel
+      let propertySequence = 1;
+      
+      // Verificar se já existem imóveis com este código no localStorage
+      const existingProperties = localStorage.getItem('properties');
+      if (existingProperties) {
+        try {
+          const properties = JSON.parse(existingProperties);
+          
+          // Filtrar imóveis com o mesmo código base
+          const sameCodeProperties = properties.filter((p: PropertyFormData) => 
+            p.code.startsWith(formData.code + '-')
+          );
+          
+          if (sameCodeProperties.length > 0) {
+            // Encontrar o maior número sequencial atual
+            const sequences = sameCodeProperties.map((p: PropertyFormData) => {
+              const sequenceStr = p.code.split('-').pop();
+              return sequenceStr ? parseInt(sequenceStr, 10) : 0;
+            });
+            
+            propertySequence = Math.max(...sequences) + 1;
+          }
+        } catch (error) {
+          console.error('Erro ao processar imóveis existentes:', error);
+        }
+      }
+      
+      // Criar o código completo do imóvel (código base + sequencial)
+      const fullPropertyCode = `${formData.code}-${propertySequence}`;
+      
+      // Criar objeto do imóvel com o código completo
+      const propertyData = {
+        ...formData,
+        id: initialData?.id || Math.random().toString(),
+        code: fullPropertyCode
+      };
+      
+      // Salvar o novo imóvel no localStorage
+      try {
+        const properties = existingProperties ? JSON.parse(existingProperties) : [];
+        properties.push(propertyData);
+        localStorage.setItem('properties', JSON.stringify(properties));
+      } catch (error) {
+        console.error('Erro ao salvar imóvel:', error);
+      }
+      
+      // Enviar dados para o componente pai
+      onSubmit(propertyData);
+    }
     onClose();
   };
 
-  if (!isOpen) return null;
+  // Função para formatar o CEP no padrão 00000-000
+  const formatCep = (cep: string) => {
+    cep = cep.replace(/\D/g, ''); // Remove caracteres não numéricos
+    if (cep.length > 5) {
+      return `${cep.slice(0, 5)}-${cep.slice(5, 8)}`;
+    }
+    return cep;
+  };
+
+  const handleCepSearch = async (cep: string) => {
+    // Remove caracteres não numéricos para fazer a busca
+    const cepNumerico = cep.replace(/\D/g, '');
+    
+    // Só faz a busca se tiver 8 dígitos
+    if (cepNumerico.length === 8) {
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cepNumerico}/json/`);
+        const data = await response.json();
+        
+        if (!data.erro) {
+          setFormData(prev => ({
+            ...prev,
+            address: data.logradouro,
+            neighborhood: data.bairro,
+            city: data.localidade,
+            state: data.uf
+          }));
+        }
+      } catch (error) {
+        console.error('Erro ao buscar CEP:', error);
+      }
+    }
+  };
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[9998]" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-xl max-h-[90vh] bg-white rounded-xl shadow-lg z-[9999] overflow-y-auto">
-          <div className="p-6 border-b border-border sticky top-0 bg-white">
-            <div className="flex items-center justify-between">
-              <Dialog.Title className="text-xl font-semibold text-gray-900">
-                {property ? 'Editar Imóvel' : 'Adicionar Imóvel'}
-              </Dialog.Title>
-              <Dialog.Close className="text-gray-400 hover:text-gray-600 transition-colors">
-                <X className="w-5 h-5" />
-              </Dialog.Close>
-            </div>
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-xl bg-white rounded-xl shadow-lg z-[9999] max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white px-6 py-4 border-b border-border flex items-center justify-between">
+            <Dialog.Title className="text-xl font-semibold text-gray-900">
+              {isEditing ? 'Editar Imóvel' : 'Cadastrar Novo Imóvel'}
+            </Dialog.Title>
+            <Dialog.Close className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </Dialog.Close>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Informações Básicas */}
+          <div className="p-6 space-y-6">
             <div className="space-y-4">
-              <h3 className="text-lg font-medium text-gray-900">Informações Básicas</h3>
-              
-              <div>
-                <label htmlFor="codigo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Código
-                </label>
-                <input
-                  type="text"
-                  id="codigo"
-                  value={formData.codigo}
-                  onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="tipo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Tipo
-                </label>
-                <select
-                  id="tipo"
-                  value={formData.tipo}
-                  onChange={(e) => setFormData({ ...formData, tipo: e.target.value as Property['tipo'] })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
-                >
-                  <option value="Residencial">Residencial</option>
-                  <option value="Comercial">Comercial</option>
-                  <option value="Industrial">Industrial</option>
-                </select>
-              </div>
-
+              {/* Código e Tipo */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="area" className="block text-sm font-medium text-gray-700 mb-1">
-                    Área (m²)
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Código do Imóvel
                   </label>
                   <input
-                    type="number"
-                    id="area"
-                    value={formData.area}
-                    onChange={(e) => setFormData({ ...formData, area: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
-                    min="0"
+                    type="text"
+                    value={formData.code}
+                    onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    placeholder="Ex: APT-123"
                   />
                 </div>
-
                 <div>
-                  <label htmlFor="valor" className="block text-sm font-medium text-gray-700 mb-1">
-                    Valor
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de Imóvel
                   </label>
-                  <input
-                    type="number"
-                    id="valor"
-                    value={formData.valor}
-                    onChange={(e) => setFormData({ ...formData, valor: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
-                    min="0"
-                  />
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  >
+                    <option value="">Selecione um tipo</option>
+                    <option value="casa">Casa</option>
+                    <option value="apartamento">Apartamento</option>
+                    <option value="sala_comercial">Sala Comercial</option>
+                    <option value="galpao">Galpão</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor="quartos" className="block text-sm font-medium text-gray-700 mb-1">
-                    Quartos
-                  </label>
-                  <input
-                    type="number"
-                    id="quartos"
-                    value={formData.quartos}
-                    onChange={(e) => setFormData({ ...formData, quartos: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="banheiros" className="block text-sm font-medium text-gray-700 mb-1">
-                    Banheiros
-                  </label>
-                  <input
-                    type="number"
-                    id="banheiros"
-                    value={formData.banheiros}
-                    onChange={(e) => setFormData({ ...formData, banheiros: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="vagas" className="block text-sm font-medium text-gray-700 mb-1">
-                    Vagas
-                  </label>
-                  <input
-                    type="number"
-                    id="vagas"
-                    value={formData.vagas}
-                    onChange={(e) => setFormData({ ...formData, vagas: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
-                    min="0"
-                  />
-                </div>
-              </div>
-
+              {/* CEP */}
               <div>
-                <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  id="status"
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as Property['status'] })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
-                >
-                  <option value="Disponível">Disponível</option>
-                  <option value="Alugado">Alugado</option>
-                  <option value="Vendido">Vendido</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Endereço */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium text-gray-900">Endereço</h3>
-
-              <div>
-                <label htmlFor="cep" className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   CEP
                 </label>
                 <input
                   type="text"
-                  id="cep"
-                  value={formData.endereco.cep}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    endereco: { ...formData.endereco, cep: e.target.value }
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
+                  value={formData.cep}
+                  onChange={(e) => {
+                    // Aplica a máscara e atualiza o estado
+                    const cepDigitado = e.target.value;
+                    const cepFormatado = formatCep(cepDigitado);
+                    
+                    setFormData(prev => ({ ...prev, cep: cepFormatado }));
+                    
+                    // Busca o CEP quando tiver 8 dígitos numéricos
+                    const cepNumerico = cepFormatado.replace(/\D/g, '');
+                    if (cepNumerico.length === 8) {
+                      handleCepSearch(cepNumerico);
+                    }
+                  }}
+                  maxLength={9} // 8 dígitos + 1 hífen
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="00000-000"
                 />
               </div>
 
+              {/* Endereço */}
               <div>
-                <label htmlFor="logradouro" className="block text-sm font-medium text-gray-700 mb-1">
-                  Logradouro
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Endereço
                 </label>
                 <input
                   type="text"
-                  id="logradouro"
-                  value={formData.endereco.logradouro}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    endereco: { ...formData.endereco, logradouro: e.target.value }
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
+                  value={formData.address}
+                  onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Rua, Avenida, etc..."
                 />
               </div>
 
+              {/* Número e Complemento */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="numero" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Número
                   </label>
                   <input
                     type="text"
-                    id="numero"
-                    value={formData.endereco.numero}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      endereco: { ...formData.endereco, numero: e.target.value }
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
+                    value={formData.number}
+                    onChange={(e) => setFormData(prev => ({ ...prev, number: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
                 </div>
-
                 <div>
-                  <label htmlFor="complemento" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Complemento
                   </label>
                   <input
                     type="text"
-                    id="complemento"
-                    value={formData.endereco.complemento}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      endereco: { ...formData.endereco, complemento: e.target.value }
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
+                    value={formData.complement}
+                    onChange={(e) => setFormData(prev => ({ ...prev, complement: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    placeholder="Apto, Sala, etc..."
                   />
                 </div>
               </div>
 
+              {/* Área */}
               <div>
-                <label htmlFor="bairro" className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Área (m²)
+                </label>
+                <input
+                  type="text"
+                  value={formData.area}
+                  onChange={(e) => {
+                    // Permitir apenas números e um ponto decimal
+                    const area = e.target.value.replace(/[^\d.]/g, '');
+                    // Evitar múltiplos pontos decimais
+                    const formattedArea = area.split('.').length > 2 
+                      ? area.substring(0, area.lastIndexOf('.'))
+                      : area;
+                    setFormData(prev => ({ ...prev, area: formattedArea }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Ex: 75.5"
+                />
+              </div>
+
+              {/* Bairro */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Bairro
                 </label>
                 <input
                   type="text"
-                  id="bairro"
-                  value={formData.endereco.bairro}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    endereco: { ...formData.endereco, bairro: e.target.value }
-                  })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                  required
+                  value={formData.neighborhood}
+                  onChange={(e) => setFormData(prev => ({ ...prev, neighborhood: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                 />
               </div>
 
+              {/* Cidade e Estado */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="cidade" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Cidade
                   </label>
                   <input
                     type="text"
-                    id="cidade"
-                    value={formData.endereco.cidade}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      endereco: { ...formData.endereco, cidade: e.target.value }
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
+                    value={formData.city}
+                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                   />
                 </div>
-
                 <div>
-                  <label htmlFor="estado" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Estado
                   </label>
                   <input
                     type="text"
-                    id="estado"
-                    value={formData.endereco.estado}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      endereco: { ...formData.endereco, estado: e.target.value }
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    required
+                    value={formData.state}
+                    onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    maxLength={2}
                   />
                 </div>
               </div>
-            </div>
 
-            {/* Botões */}
-            <div className="flex items-center justify-end gap-4">
-              <Dialog.Close className="px-4 py-2 text-gray-600 hover:text-gray-900 transition-colors">
-                Cancelar
-              </Dialog.Close>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
-              >
-                {property ? 'Salvar' : 'Adicionar'}
-              </button>
+              {/* Descrição */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descrição
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  placeholder="Informações adicionais sobre o imóvel..."
+                />
+              </div>
             </div>
-          </form>
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-border flex items-center justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light transition-colors rounded-lg"
+            >
+              {isEditing ? 'Salvar' : 'Cadastrar Imóvel'}
+            </button>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

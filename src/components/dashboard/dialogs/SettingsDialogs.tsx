@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { X, Check, Mail, Smartphone, CreditCard, Eye, EyeOff, FileText, Upload, Building2, User, Plus, ChevronDown, Save, Trash2, Edit2 } from 'lucide-react';
+import { X, Check, Mail, Smartphone, CreditCard, Eye, EyeOff, FileText, Upload, Building2, User, Plus, ChevronDown, Save, Trash2, Edit2, Download } from 'lucide-react';
 import * as Dialog from '@radix-ui/react-dialog';
 import Image from 'next/image';
 
@@ -976,6 +976,7 @@ interface TipoVistoria {
   entendimentoProcesso: string;
   modeloDocumento?: File | null;
   modeloDocumentoNome?: string;
+  modeloDocumentoUrl?: string;
 }
 
 export function InspectionConfigDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -983,12 +984,14 @@ export function InspectionConfigDialog({ isOpen, onClose }: { isOpen: boolean; o
     { 
       nome: 'Entrada', 
       entendimentoProcesso: 'Vistoria realizada no momento em que o inquilino recebe as chaves do imóvel.',
-      modeloDocumentoNome: 'modelo-entrada.pdf'
+      modeloDocumentoNome: 'modelo-entrada.pdf',
+      modeloDocumentoUrl: '/docs/modelo-entrada.pdf'
     },
     { 
       nome: 'Saída', 
       entendimentoProcesso: 'Vistoria realizada no momento em que o inquilino devolve as chaves do imóvel.',
-      modeloDocumentoNome: 'modelo-saida.pdf'
+      modeloDocumentoNome: 'modelo-saida.pdf',
+      modeloDocumentoUrl: '/docs/modelo-saida.pdf'
     }
   ]);
   const [tiposImovel, setTiposImovel] = useState<string[]>(['Casa', 'Apartamento', 'Sala Comercial']);
@@ -1060,6 +1063,36 @@ export function InspectionConfigDialog({ isOpen, onClose }: { isOpen: boolean; o
     }
   };
 
+  const handleDownloadDocumento = async (tipo: TipoVistoria) => {
+    try {
+      if (tipo.modeloDocumento instanceof File) {
+        const url = URL.createObjectURL(tipo.modeloDocumento);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = tipo.modeloDocumentoNome || 'documento.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (tipo.modeloDocumentoUrl) {
+        // Se tivermos uma URL, fazer uma requisição para baixar o documento
+        const response = await fetch(tipo.modeloDocumentoUrl);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = tipo.modeloDocumentoNome || 'documento.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Erro ao baixar documento:', error);
+      alert('Não foi possível baixar o documento. Tente novamente mais tarde.');
+    }
+  };
+
   return (
     <BaseDialog isOpen={isOpen} onClose={onClose} title="Configurações de Vistorias">
       <div className="space-y-6">
@@ -1072,17 +1105,24 @@ export function InspectionConfigDialog({ isOpen, onClose }: { isOpen: boolean; o
             {tiposVistoria.map((tipo) => (
               <div key={tipo.nome} className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="flex items-start justify-between">
-                  <div className="space-y-2">
+                  <div className="space-y-2 flex-1 min-w-0 mr-4">
                     <h4 className="text-base font-medium text-gray-900">{tipo.nome}</h4>
-                    <p className="text-sm text-gray-600">{tipo.entendimentoProcesso}</p>
-                    {tipo.modeloDocumentoNome && (
+                    <p className="text-sm text-gray-600 break-words">{tipo.entendimentoProcesso}</p>
+                    {(tipo.modeloDocumentoNome || tipo.modeloDocumentoUrl) && (
                       <div className="flex items-center gap-2 text-sm text-primary">
-                        <FileText className="w-4 h-4" />
-                        <span>{tipo.modeloDocumentoNome}</span>
+                        <FileText className="w-4 h-4 flex-shrink-0" />
+                        <span className="truncate">{tipo.modeloDocumentoNome || 'Documento'}</span>
+                        <button
+                          onClick={() => handleDownloadDocumento(tipo)}
+                          className="p-1 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+                          title="Baixar documento"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                       onClick={() => handleEditTipoVistoria(tipo)}
                       className="p-1.5 text-gray-600 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"

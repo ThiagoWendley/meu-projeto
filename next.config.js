@@ -6,7 +6,8 @@ const nextConfig = {
       'finger.ind.br',
       'classic.exame.com',
       'consultoriodehipnose.com.br',
-      'img.freepik.com'
+      'img.freepik.com',
+      'images.unsplash.com'
     ],
   },
   eslint: {

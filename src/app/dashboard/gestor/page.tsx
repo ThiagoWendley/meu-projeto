@@ -31,12 +31,14 @@ export default function DashGestor() {
   const [isContestacao, setIsContestacao] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
+  const [isViewDetailsModalOpen, setIsViewDetailsModalOpen] = useState(false);
   const [filterRealEstate, setFilterRealEstate] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<InspectionStatus | ''>('');
   const [filterInspector, setFilterInspector] = useState<string>('');
   const [filterSearchTerm, setFilterSearchTerm] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [inspections, setInspections] = useState<Inspection[]>([]);
 
   useEffect(() => {
     setIsSidebarOpen(window.innerWidth >= 768);
@@ -46,6 +48,18 @@ export default function DashGestor() {
     };
 
     window.addEventListener('resize', handleResize);
+    
+    // Carregar vistorias do localStorage
+    const savedInspections = localStorage.getItem('vistorias');
+    if (savedInspections) {
+      try {
+        const parsedInspections = JSON.parse(savedInspections);
+        setInspections(parsedInspections);
+      } catch (error) {
+        console.error('Erro ao carregar vistorias:', error);
+      }
+    }
+    
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -54,8 +68,36 @@ export default function DashGestor() {
   };
 
   const handleSubmitInspection = (data: InspectionFormData) => {
-    // TODO: Implementar lógica para salvar a vistoria
-    console.log('Nova vistoria:', data);
+    // Criar um objeto de vistoria a partir dos dados do formulário
+    const newInspection: Inspection = {
+      id: Math.floor(Math.random() * 10000), // Gera um ID aleatório
+      sequentialCode: data.sequentialCode, // Código sequencial único da vistoria
+      propertyCode: data.propertyId,
+      address: '', // Idealmente, buscaríamos o endereço do imóvel pelo ID
+      date: data.scheduledDate,
+      time: data.scheduledTime,
+      type: data.inspectionType === 'entrada' 
+        ? 'Entrada' 
+        : data.inspectionType === 'saida' 
+          ? 'Saída' 
+          : 'Periódica',
+      status: data.status || 'agendadas',
+      company: 'Gestão Vistorias', // Nome da empresa de gestão
+      isContestacao: false // Valor padrão
+    };
+
+    // Adicionar a nova vistoria à lista
+    const updatedInspections = [...inspections, newInspection];
+    setInspections(updatedInspections);
+    
+    // Salvar no localStorage
+    localStorage.setItem('vistorias', JSON.stringify(updatedInspections));
+    
+    // Fechar o modal
+    setIsInspectionModalOpen(false);
+    
+    // Garantir que a aba de "agendadas" esteja ativa para que o usuário veja a nova vistoria
+    setActiveInspectionTab('agendadas');
   };
 
   const handleDelete = () => {
@@ -69,6 +111,54 @@ export default function DashGestor() {
 
   const canDelete = (status: InspectionStatus) => {
     return status === 'agendadas' || status === 'atribuidas';
+  };
+
+  const handleViewDetails = (inspection: Inspection) => {
+    setSelectedInspection(inspection);
+    setIsViewDetailsModalOpen(true);
+  };
+
+  const handleSubmitInspectionEdit = (data: InspectionFormData) => {
+    if (!selectedInspection) return;
+
+    // Criar um objeto de vistoria atualizado a partir dos dados do formulário
+    let status = selectedInspection.status;
+
+    // Se foi selecionado um vistoriador, atualizar o status para "atribuidas"
+    if (data.inspectorId && data.inspectorId !== 'company' && data.inspectorId !== selectedInspection.inspector) {
+      status = 'atribuidas';
+    }
+
+    const updatedInspection: Inspection = {
+      ...selectedInspection,
+      propertyCode: data.propertyId,
+      address: data.address || selectedInspection.address,
+      date: data.scheduledDate,
+      time: data.scheduledTime,
+      type: data.inspectionType === 'entrada' 
+        ? 'Entrada' 
+        : data.inspectionType === 'saida' 
+          ? 'Saída' 
+          : 'Periódica',
+      status: status,
+      inspector: data.inspectorId
+    };
+
+    // Atualizar a lista de vistorias
+    const updatedInspections = inspections.map(item => 
+      item.id === selectedInspection.id ? updatedInspection : item
+    );
+    setInspections(updatedInspections);
+    localStorage.setItem('vistorias', JSON.stringify(updatedInspections));
+    
+    // Fechar o modal
+    setIsViewDetailsModalOpen(false);
+    setSelectedInspection(null);
+    
+    // Atualizar a aba ativa caso o status tenha mudado
+    if (status !== selectedInspection.status) {
+      setActiveInspectionTab(status as InspectionStatus);
+    }
   };
 
   // Mock data para demonstração (substituir por dados reais)
@@ -186,7 +276,10 @@ export default function DashGestor() {
               onTabChange={setActiveInspectionTab}
               onAddInspection={handleAddInspection}
             />
-            <InspectionsList status={activeInspectionTab} />
+            <InspectionsList 
+              status={activeInspectionTab} 
+              onViewDetails={handleViewDetails}
+            />
             <InspectionModal
               isOpen={isInspectionModalOpen}
               onClose={() => setIsInspectionModalOpen(false)}
@@ -531,7 +624,7 @@ export default function DashGestor() {
                       .map(inspection => (
                         <tr key={inspection.id} className="hover:bg-gray-50/50 transition-colors">
                           <td className="px-4 md:px-6 py-4 text-sm text-gray-600 hidden md:table-cell">
-                            {inspection.propertyCode || 'N/A'}
+                            {inspection.sequentialCode || 'N/A'}
                           </td>
                           <td className="px-4 md:px-6 py-4">
                             <div className="flex items-center gap-3">
@@ -621,6 +714,18 @@ export default function DashGestor() {
         onConfirm={handleDelete}
         title="Excluir Vistoria"
         description={`Tem certeza que deseja excluir esta vistoria? Esta ação não poderá ser desfeita.`}
+      />
+
+      {/* Modal de Detalhes da Vistoria */}
+      <InspectionModal
+        isOpen={isViewDetailsModalOpen}
+        onClose={() => {
+          setIsViewDetailsModalOpen(false);
+          setSelectedInspection(null);
+        }}
+        onSubmit={handleSubmitInspectionEdit}
+        initialData={selectedInspection}
+        title="Detalhes da Vistoria"
       />
     </div>
   );

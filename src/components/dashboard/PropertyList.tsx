@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { Building2, MapPin, Home, Bed, Bath, Car, Plus, Edit2, Trash2, Search, Eye } from 'lucide-react';
 import { Property } from '@/types/property';
 import DeleteConfirm from '../modals/DeleteConfirm';
-import PropertyModal from '../modals/PropertyModal';
-import PropertyInspectionsModal from '../modals/PropertyInspectionsModal';
+import PropertyModal, { PropertyFormData } from '../modals/PropertyModal';
+import { useRouter } from 'next/navigation';
 
 // Mock data para demonstração
 const mockProperties: Property[] = [
@@ -64,11 +64,11 @@ const mockProperties: Property[] = [
 ];
 
 export default function PropertyList() {
+  const router = useRouter();
   const [properties, setProperties] = useState<Property[]>(mockProperties);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isInspectionsModalOpen, setIsInspectionsModalOpen] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
 
   const filteredProperties = properties.filter(property => 
@@ -77,19 +77,61 @@ export default function PropertyList() {
     property.imobiliaria.nome.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAdd = (data: Omit<Property, 'id'>) => {
+  const handleAdd = (data: PropertyFormData) => {
+    // Converter os dados do formulário para o formato da propriedade
     const newProperty: Property = {
-      ...data,
-      id: String(properties.length + 1)
+      id: String(properties.length + 1),
+      codigo: data.code,
+      tipo: data.type as any, // Usar tipagem mais flexível aqui
+      endereco: {
+        logradouro: data.address,
+        numero: data.number,
+        complemento: data.complement,
+        bairro: data.neighborhood,
+        cidade: data.city,
+        estado: data.state,
+        cep: data.cep
+      },
+      area: 0, // Valor padrão, ajustar conforme necessário
+      quartos: 0,
+      banheiros: 0,
+      vagas: 0,
+      imobiliaria: {
+        id: '1',
+        nome: 'Imobiliária Padrão'
+      },
+      status: 'Disponível',
+      valor: 0,
+      dataRegistro: new Date().toISOString().split('T')[0],
+      ultimaVistoria: ''
     };
+    
     setProperties([...properties, newProperty]);
     setIsAddModalOpen(false);
   };
 
-  const handleEdit = (data: Property) => {
-    setProperties(properties.map(p => p.id === data.id ? data : p));
-    setIsAddModalOpen(false);
-    setSelectedProperty(null);
+  const handleEdit = (data: PropertyFormData) => {
+    if (selectedProperty) {
+      // Converter os dados do formulário para o formato da propriedade
+      const updatedProperty: Property = {
+        ...selectedProperty,
+        codigo: data.code,
+        tipo: data.type as any, // Usar tipagem mais flexível aqui
+        endereco: {
+          logradouro: data.address,
+          numero: data.number,
+          complemento: data.complement,
+          bairro: data.neighborhood,
+          cidade: data.city,
+          estado: data.state,
+          cep: data.cep
+        }
+      };
+      
+      setProperties(properties.map(p => p.id === selectedProperty.id ? updatedProperty : p));
+      setIsAddModalOpen(false);
+      setSelectedProperty(null);
+    }
   };
 
   const handleDelete = () => {
@@ -152,8 +194,7 @@ export default function PropertyList() {
             key={property.id}
             className="bg-white rounded-xl border border-border p-4 hover:shadow-md transition-shadow space-y-4 cursor-pointer"
             onClick={() => {
-              setSelectedProperty(property);
-              setIsInspectionsModalOpen(true);
+              router.push(`/dashboard/imobiliaria/imovel/${property.id}`);
             }}
           >
             {/* Cabeçalho do Card - Nome/Código e Status */}
@@ -259,9 +300,8 @@ export default function PropertyList() {
               <button 
                 className="p-1.5 text-gray-600 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
                 onClick={(e) => {
-                  e.stopPropagation(); // Evita que o clique no botão abra o modal de vistorias
-                  setSelectedProperty(property);
-                  setIsInspectionsModalOpen(true);
+                  e.stopPropagation(); // Evita que o clique no botão redirecione para a página de detalhes
+                  router.push(`/dashboard/imobiliaria/imovel/${property.id}`);
                 }}
               >
                 <Eye className="w-4 h-4" />
@@ -269,7 +309,7 @@ export default function PropertyList() {
               <button 
                 className="p-1.5 text-gray-600 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
                 onClick={(e) => {
-                  e.stopPropagation(); // Evita que o clique no botão abra o modal de vistorias
+                  e.stopPropagation(); // Evita que o clique no botão redirecione para a página de detalhes
                   setSelectedProperty(property);
                   setIsAddModalOpen(true);
                 }}
@@ -279,7 +319,7 @@ export default function PropertyList() {
               <button 
                 className="p-1.5 text-gray-600 hover:text-red-500 hover:bg-gray-50 rounded-lg transition-colors"
                 onClick={(e) => {
-                  e.stopPropagation(); // Evita que o clique no botão abra o modal de vistorias
+                  e.stopPropagation(); // Evita que o clique no botão redirecione para a página de detalhes
                   setSelectedProperty(property);
                   setIsDeleteModalOpen(true);
                 }}
@@ -311,20 +351,7 @@ export default function PropertyList() {
             setIsAddModalOpen(false);
             setSelectedProperty(null);
           }}
-          property={selectedProperty}
           onSubmit={selectedProperty ? handleEdit : handleAdd}
-        />
-      )}
-
-      {/* Modal de Histórico de Vistorias */}
-      {isInspectionsModalOpen && selectedProperty && (
-        <PropertyInspectionsModal
-          isOpen={isInspectionsModalOpen}
-          onClose={() => {
-            setIsInspectionsModalOpen(false);
-            setSelectedProperty(null);
-          }}
-          property={selectedProperty}
         />
       )}
     </div>

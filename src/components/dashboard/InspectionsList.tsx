@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, MapPin, Clock, User, ArrowRight, Building2, Hash, Printer, Copy, RefreshCw, X, Search, Trash2 } from 'lucide-react';
 import type { InspectionStatus } from './InspectionsTabBar';
 import DeleteConfirm from '../modals/DeleteConfirm';
@@ -8,9 +8,10 @@ import { Inspection } from '@/types/inspection';
 
 interface InspectionsListProps {
   status: InspectionStatus;
+  onViewDetails?: (inspection: Inspection) => void;
 }
 
-// Dados simulados de vistorias
+// Dados simulados de vistorias como fallback
 const mockInspections: Inspection[] = [
   {
     id: 1,
@@ -53,41 +54,65 @@ const mockInspections: Inspection[] = [
 // Função auxiliar para obter a cor do status
 const getStatusColor = (status: InspectionStatus) => {
   const colors = {
-    agendadas: 'bg-yellow-50 text-yellow-700',
-    atribuidas: 'bg-blue-50 text-blue-700',
-    andamento: 'bg-purple-50 text-purple-700',
-    finalizadas: 'bg-green-50 text-green-700'
+    agendadas: 'bg-amber-50 text-amber-600',
+    atribuidas: 'bg-blue-50 text-blue-600',
+    andamento: 'bg-indigo-50 text-indigo-600',
+    finalizadas: 'bg-emerald-50 text-emerald-600'
   };
   return colors[status];
 };
 
-export default function InspectionsList({ status }: InspectionsListProps) {
+export default function InspectionsList({ status, onViewDetails }: InspectionsListProps) {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
-  const [selectedInspection, setSelectedInspection] = useState<typeof mockInspections[0] | null>(null);
+  const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [isContestacao, setIsContestacao] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
+  
+  // Carregar vistorias do localStorage
+  useEffect(() => {
+    const savedInspections = localStorage.getItem('vistorias');
+    if (savedInspections) {
+      try {
+        const parsedInspections = JSON.parse(savedInspections);
+        setInspections(parsedInspections);
+      } catch (error) {
+        console.error('Erro ao carregar vistorias:', error);
+        setInspections(mockInspections);
+      }
+    } else {
+      setInspections(mockInspections);
+    }
+  }, []);
 
-  const handlePrint = (inspection: typeof mockInspections[0]) => {
+  const handlePrint = (inspection: Inspection) => {
     setSelectedInspection(inspection);
     setIsPrintModalOpen(true);
   };
 
-  const handleDuplicate = (inspection: typeof mockInspections[0]) => {
+  const handleDuplicate = (inspection: Inspection) => {
     setSelectedInspection(inspection);
     setIsDuplicateModalOpen(true);
   };
 
   const handleSync = () => {
-    alert('Modificações enviadas para o app com sucesso!');
+    if (confirm('Re-sincronizar\nEsta opção irá marcar esta vistoria para sincronização no APP, se a vistoria ja foi iniciada no app esta opção pode causar perdar de dados da vistoria no APP, confirma?')) {
+      alert('Modificações enviadas para o app com sucesso!');
+    }
   };
 
   const handleDelete = () => {
     if (selectedInspection) {
-      // Aqui você implementaria a lógica real de exclusão
-      console.log('Excluindo vistoria:', selectedInspection.id);
+      // Remover vistoria do estado
+      const updatedInspections = inspections.filter(i => i.id !== selectedInspection.id);
+      setInspections(updatedInspections);
+      
+      // Atualizar localStorage
+      localStorage.setItem('vistorias', JSON.stringify(updatedInspections));
+      
       setIsDeleteModalOpen(false);
       setSelectedInspection(null);
     }
@@ -96,15 +121,30 @@ export default function InspectionsList({ status }: InspectionsListProps) {
   const canDelete = (status: InspectionStatus) => {
     return status === 'agendadas' || status === 'atribuidas';
   };
+  
+  // Cores modernas para os ícones baseadas no tipo de vistoria
+  const getIconColor = (type: string) => {
+    switch (type) {
+      case 'Entrada':
+        return 'text-emerald-500';
+      case 'Saída':
+        return 'text-purple-500';
+      case 'Periódica':
+        return 'text-blue-500';
+      default:
+        return 'text-gray-600';
+    }
+  };
 
   // Filtra as vistorias baseado no termo de busca e tipo selecionado
-  const filteredInspections = mockInspections.filter(inspection => {
+  const filteredInspections = inspections.filter(inspection => {
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = inspection.propertyCode.toLowerCase().includes(searchLower) ||
-      inspection.address.toLowerCase().includes(searchLower);
+    const matchesSearch = inspection.propertyCode?.toLowerCase().includes(searchLower) ||
+      inspection.address?.toLowerCase().includes(searchLower);
     const matchesType = selectedType === '' || inspection.type === selectedType;
+    const matchesStatus = inspection.status === status;
     
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesType && matchesStatus;
   });
 
   return (
@@ -132,7 +172,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
             <option value="">Todos os tipos</option>
             <option value="Entrada">Entrada</option>
             <option value="Saída">Saída</option>
-            <option value="Conferência">Conferência</option>
+            <option value="Periódica">Periódica</option>
           </select>
         </div>
 
@@ -158,7 +198,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredInspections.map((inspection) => (
-          <div
+          <div 
             key={inspection.id}
             className={`bg-white rounded-xl p-4 hover:shadow-md transition-shadow space-y-4 ${
               inspection.isContestacao 
@@ -170,7 +210,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
             <div className="space-y-2">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-gray-600" />
+                  <Building2 className={`w-4 h-4 ${getIconColor(inspection.type)}`} />
                   <h3 className="font-semibold text-gray-900">{inspection.company}</h3>
                 </div>
                 <div className="flex items-center gap-2">
@@ -181,16 +221,18 @@ export default function InspectionsList({ status }: InspectionsListProps) {
                     </div>
                   )}
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
-                    {status}
+                    {status === 'andamento' ? 'Em Andamento' : status.charAt(0).toUpperCase() + status.slice(1)}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <Hash className="w-4 h-4 text-gray-600" />
-                <span className="font-medium">{inspection.propertyCode}</span>
+                <Hash className={`w-4 h-4 ${getIconColor(inspection.type)}`} />
+                <span className="font-medium">
+                  {inspection.sequentialCode || ''}
+                </span>
               </div>
               <div className="flex items-start gap-1 text-sm text-gray-600">
-                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <MapPin className={`w-4 h-4 ${getIconColor(inspection.type)} flex-shrink-0 mt-0.5`} />
                 <span className="line-clamp-2">{inspection.address}</span>
               </div>
             </div>
@@ -198,18 +240,18 @@ export default function InspectionsList({ status }: InspectionsListProps) {
             {/* Informações da Vistoria */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Calendar className="w-4 h-4" />
+                <Calendar className={`w-4 h-4 ${getIconColor(inspection.type)}`} />
                 <span>{inspection.date}</span>
-                <Clock className="w-4 h-4 ml-2" />
+                <Clock className={`w-4 h-4 ml-2 ${getIconColor(inspection.type)}`} />
                 <span>{inspection.time}</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <span className="font-medium">Tipo:</span>
-                <span>{inspection.type}</span>
+                <span className={`${getIconColor(inspection.type)}`}>{inspection.type}</span>
               </div>
-              {(status === 'atribuidas' || status === 'andamento' || status === 'finalizadas') && (
+              {(status === 'atribuidas' || status === 'andamento' || status === 'finalizadas') && inspection.inspector && (
                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <User className="w-4 h-4" />
+                  <User className={`w-4 h-4 ${getIconColor(inspection.type)}`} />
                   <span>{inspection.inspector}</span>
                 </div>
               )}
@@ -219,7 +261,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
             <div className="flex items-center justify-between border-t border-border pt-2 mt-2">
               <div className="flex items-center gap-2">
                 <div className="group relative">
-                  <button 
+                  <button
                     aria-label="Imprimir Laudo/Contestação"
                     title="Imprimir Laudo/Contestação"
                     onClick={() => handlePrint(inspection)}
@@ -231,19 +273,21 @@ export default function InspectionsList({ status }: InspectionsListProps) {
                     Imprimir Laudo/Contestação
                   </div>
                 </div>
-                <div className="group relative">
-                  <button 
-                    aria-label="Duplicar Vistoria"
-                    title="Duplicar Vistoria"
-                    onClick={() => handleDuplicate(inspection)}
-                    className="p-1.5 text-gray-600 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    Duplicar Vistoria
+                {status !== 'finalizadas' && (
+                  <div className="group relative">
+                    <button
+                      aria-label="Duplicar Vistoria"
+                      title="Duplicar Vistoria"
+                      onClick={() => handleDuplicate(inspection)}
+                      className="p-1.5 text-gray-600 hover:text-primary hover:bg-gray-50 rounded-lg transition-colors"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                      Duplicar Vistoria
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="group relative">
                   <button 
                     aria-label="Sincronizar com App"
@@ -259,7 +303,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
                 </div>
                 {canDelete(status) && (
                   <div className="group relative">
-                    <button 
+                    <button
                       aria-label="Excluir Vistoria"
                       title="Excluir Vistoria"
                       onClick={() => {
@@ -277,7 +321,8 @@ export default function InspectionsList({ status }: InspectionsListProps) {
                 )}
               </div>
               <button 
-                className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-light transition-colors"
+                onClick={() => onViewDetails?.(inspection)}
+                className={`flex items-center gap-2 text-sm font-medium ${getIconColor(inspection.type)} hover:opacity-80 transition-colors`}
                 aria-label="Ver detalhes da vistoria"
               >
                 <span>Ver Detalhes</span>
@@ -287,7 +332,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
           </div>
         ))}
       </div>
-
+      
       {/* Modal de Impressão */}
       {isPrintModalOpen && selectedInspection && (
         <div 
@@ -326,7 +371,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
                 </select>
                 <p className="mt-1 text-sm text-gray-500">Campo obrigatório.</p>
               </div>
-
+              
               <div className="space-y-3">
                 <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                   <input type="radio" name="reportType" className="text-primary focus:ring-primary" />
@@ -365,7 +410,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
           </div>
         </div>
       )}
-
+      
       {/* Modal de Duplicação */}
       {isDuplicateModalOpen && selectedInspection && (
         <div 
@@ -378,7 +423,7 @@ export default function InspectionsList({ status }: InspectionsListProps) {
           >
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold text-gray-900">Duplicar Vistoria</h3>
-              <button 
+              <button
                 onClick={() => setIsDuplicateModalOpen(false)}
                 className="text-gray-400 hover:text-gray-600"
                 title="Fechar"
